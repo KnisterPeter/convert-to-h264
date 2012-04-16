@@ -1,0 +1,9 @@
+This is just a simple bash script to convert video files (e.g. vdr recordings) 
+to h264 format in a matroska container.
+
+It could be run in commandline and cron mode.
+
+Requirements:
+* HandBrake
+* ffmpeg / avconv
+
