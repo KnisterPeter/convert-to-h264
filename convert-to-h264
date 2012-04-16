@@ -1,0 +1,87 @@
+#!/bin/bash
+
+LOGFILE="/var/log/handbrake-convert.log"
+MODE="$1"
+IN="$2"
+OUT="$3"
+OWNER="$4"
+
+prepare () {
+	if [ -d "$1" -a -f "$1/00001.ts" ] ; then
+		INFILE="$1/00001.ts"
+		TITLE=`cat "$1/info" |grep "^T" |sed -e 's/^T \(.*\)/\1/'`
+	else
+		INFILE="$1"
+		TITLE=`basename "$1" |sed -e 's/\(.*\)\.[^\.]\+/\1/'`
+	fi
+	TMPFILE="/tmp/$TITLE.mkv"
+	OUTFILE="$2/$TITLE.mkv"
+}
+
+convert_input () {
+	AC3=`avconv -i "$INFILE" 2>&1 |grep "Stream " |grep "ac3" |sed -e 's/.*#0.\([0-9]\).*/\1/'`
+	if [ ! -z "$AC3" ] ; then
+		AUDIO="-a $AC3 -E copy -6 auto"
+	else
+		AUDIO="-a 1 -E copy -6 auto"
+	fi
+
+	CONVLOG="/tmp/$TITLE-convert.log"
+	if [ ! -z "$LOGFILE" ] ; then
+		echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv > \"$CONVLOG\"" >> "$LOGFILE"
+		nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$CONVLOG" 2>> "$LOGFILE"
+	else
+		nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv
+	fi
+	DURATION_IN=`avconv -i "$INFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([^ ]\+\),.*/\1/'`
+	DURATION_OUT=`avconv -i "$TMPFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([^ ]\+\),.*/\1/'`
+	if [ "$DURATION_IN" = "$DURATION_OUT" ] ; then
+		mv "$TMPFILE" "$OUTFILE"
+		if [ ! -z "$OWNER" ] ; then
+			chown "$OWNER" "$OUTFILE"
+		fi
+	fi
+	if [ -f "$CONVLOG" ] ; then
+		rm "$CONVLOG"
+	fi
+}
+
+run_from_cmdline () {
+	prepare $1 $2
+	if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
+		convert_input
+	else
+		if [ -z "$LOGFILE" ] ; then
+			echo "Skipping existing $OUTFILE"
+		fi
+	fi
+}
+
+run_from_cron () {
+	RUNNING=/tmp/handbrake-cron.running
+	if [ ! -f $RUNNING ] ; then
+		touch $RUNNING
+		for TRY in $1 ; do
+			prepare $TRY $2
+			if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
+				convert_input
+			fi
+		done
+		rm $RUNNING
+	fi
+}
+
+case "$MODE" in
+	cmdline)
+		LOGFILE=""
+		run_from_cmdline "$IN" "$OUT"
+	;;
+	cron)
+		run_from_cron "`echo $IN/*/*`" "$OUT"
+	;;
+	*)
+		echo -e "Unknown mode: $MODE\n\nUsage: $0 <mode> <infile> <outfile> <owner>\n"
+		exit 1
+	;;
+esac
+
