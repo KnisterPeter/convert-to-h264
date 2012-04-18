@@ -1,10 +1,33 @@
 #!/bin/bash
 
 LOGFILE="/var/log/handbrake-convert.log"
-MODE="$1"
-IN="$2"
-OUT="$3"
-OWNER="$4"
+RUNNING="/tmp/handbrake.running"
+DRY=""
+
+while true ; do
+	case $1 in
+		--dry-run)
+			DRY="$1"
+		;;
+		-m)
+			shift
+			MODE="$1"
+		;;
+		-i)
+			shift
+			IN="$1"
+		;;
+		-o)
+			shift
+			OUT="$1"
+		;;
+		-u)
+			shift
+			OWNER="$1"
+		;;
+	esac
+	shift || break
+done
 
 prepare () {
 	if [ -d "$1" -a -f "$1/00001.ts" ] ; then
@@ -29,12 +52,14 @@ convert_input () {
 	CONVLOG="/tmp/$TITLE-convert.log"
 	if [ ! -z "$LOGFILE" ] ; then
 		echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv > \"$CONVLOG\"" >> "$LOGFILE"
-		nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$CONVLOG" 2>> "$LOGFILE"
+		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$CONVLOG" 2>> "$LOGFILE"
 	else
-		nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv
+		[ ! -z "$DRY" ] && echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv"
+		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv
 	fi
-	DURATION_IN=`avconv -i "$INFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([^ ]\+\),.*/\1/'`
-	DURATION_OUT=`avconv -i "$TMPFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([^ ]\+\),.*/\1/'`
+	# Compare hours and minutes (ignore seconds, since its too inaccurate)
+	DURATION_IN=`avconv -i "$INFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([0-9]\+:[0-9]\+\).*/\1/'`
+	DURATION_OUT=`avconv -i "$TMPFILE" 2>&1 |grep "Duration:" |sed -e 's/.*Duration: \([0-9]\+:[0-9]\+\).*/\1/'`
 	if [ "$DURATION_IN" = "$DURATION_OUT" ] ; then
 		mv "$TMPFILE" "$OUTFILE"
 		if [ ! -z "$OWNER" ] ; then
@@ -58,30 +83,42 @@ run_from_cmdline () {
 }
 
 run_from_cron () {
-	RUNNING=/tmp/handbrake-cron.running
-	if [ ! -f $RUNNING ] ; then
-		touch $RUNNING
-		for TRY in $1 ; do
+	for TRY in $1 ; do
+		# Skip VDR deleted recordings
+		DEL=`echo $TRY |sed -e 's/.*\(\.del\)/\1/'`
+		if [ "$DEL" != ".del" ] ; then
 			prepare $TRY $2
 			if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
 				convert_input
 			fi
-		done
-		rm $RUNNING
-	fi
+		fi
+	done
 }
 
-case "$MODE" in
-	cmdline)
-		LOGFILE=""
-		run_from_cmdline "$IN" "$OUT"
-	;;
-	cron)
-		run_from_cron "`echo $IN/*/*`" "$OUT"
-	;;
-	*)
-		echo -e "Unknown mode: $MODE\n\nUsage: $0 <mode> <infile> <outfile> <owner>\n"
-		exit 1
-	;;
-esac
+if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
+	case "$MODE" in
+		cmdline)
+			[ -z "$DRY" ] && touch $RUNNING
+			LOGFILE=""
+			run_from_cmdline "$IN" "$OUT"
+			[ -z "$DRY" ] && rm $RUNNING
+		;;
+		cron)
+			[ -z "$DRY" ] && touch $RUNNING
+			run_from_cron "`echo $IN/*/*`" "$OUT"
+			[ -z "$DRY" ] && rm $RUNNING
+		;;
+		*)
+			echo -e "Unknown mode: $MODE\n\n"
+			echo -e "Usage: $0\n"
+			echo -e "\t-m <mode>"
+			echo -e "\t-i <input>"
+			echo -e "\t-o <output>"
+			echo -e "\t-u <owner>"
+			echo -e "\t--dry-run"
+			echo
+			exit 1
+		;;
+	esac
+fi
 
