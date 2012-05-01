@@ -72,7 +72,7 @@ convert_input () {
 }
 
 run_from_cmdline () {
-	prepare $1 $2
+	prepare "$1" "$2"
 	if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
 		convert_input
 	else
@@ -88,7 +88,10 @@ run_from_cron () {
 		DEL=`echo $TRY |sed -e 's/.*\(\.del\)/\1/'`
 		if [ "$DEL" != ".del" ] ; then
 			prepare $TRY $2
-			if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
+			NOW=`date +%s`
+			LAST=`stat -c %Y $INFILE`
+			LAST=`expr \( $NOW - $LAST \) / 60`
+			if [ $LAST -ge 5 -a ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
 				convert_input
 			fi
 		fi
@@ -112,6 +115,8 @@ if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
 			echo -e "Unknown mode: $MODE\n\n"
 			echo -e "Usage: $0\n"
 			echo -e "\t-m <mode>"
+			echo -e "\t\tcmdline"
+			echo -e "\t\tcron"
 			echo -e "\t-i <input>"
 			echo -e "\t-o <output>"
 			echo -e "\t-u <owner>"
