@@ -46,7 +46,12 @@ convert_input () {
 	if [ ! -z "$AC3" ] ; then
 		AUDIO="-a $AC3 -E copy -6 auto"
 	else
-		AUDIO="-a 1 -E copy -6 auto"
+		MP2=`avconv -i "$INFILE" 2>&1 |grep "Audio: mp2" |wc -l`
+		if [ $MP2 -ge 1 ] ; then
+			AUDIO="-a 1 -E lame"
+		else
+			AUDIO="-a 1 -E copy -6 auto"
+		fi
 	fi
 
 	CONVLOG="/tmp/$TITLE-convert.log"
@@ -71,7 +76,7 @@ convert_input () {
 	fi
 }
 
-run_from_cmdline () {
+process_file () {
 	prepare "$1" "$2"
 	if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
 		convert_input
@@ -82,17 +87,31 @@ run_from_cmdline () {
 	fi
 }
 
+run_from_cmdline () {
+	if [ -f "$1" ] ; then
+		process_file "$1" "$2"
+	else
+		for TYPE in avi mpg mpeg ; do
+			find "$1" -name "*.$TYPE" -print0 | while read -d $'\0' VID ; do
+				process_file "$VID" "$2"
+			done
+		done
+	fi
+}
+
 run_from_cron () {
 	for TRY in $1 ; do
 		# Skip VDR deleted recordings
 		DEL=`echo $TRY |sed -e 's/.*\(\.del\)/\1/'`
 		if [ "$DEL" != ".del" ] ; then
 			prepare $TRY $2
-			NOW=`date +%s`
-			LAST=`stat -c %Y $INFILE`
-			LAST=`expr \( $NOW - $LAST \) / 60`
-			if [ $LAST -ge 5 -a ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
-				convert_input
+			if [ -f "$INFILE" ] ; then
+				NOW=`date +%s`
+				LAST=`stat -c %Y $INFILE`
+				LAST=`expr \( $NOW - $LAST \) / 60`
+				if [ $LAST -ge 5 -a ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
+					convert_input
+				fi
 			fi
 		fi
 	done
