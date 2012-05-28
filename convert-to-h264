@@ -1,8 +1,10 @@
 #!/bin/bash
 
 LOGFILE="/var/log/handbrake-convert.log"
+PROGRESS="/tmp/handbrake-progress.log"
 RUNNING="/tmp/handbrake.running"
 DRY=""
+ARCHIVE=""
 
 while true ; do
 	case $1 in
@@ -24,6 +26,10 @@ while true ; do
 		-u)
 			shift
 			OWNER="$1"
+		;;
+		-a)
+			shift
+			ARCHIVE="$1"
 		;;
 	esac
 	shift || break
@@ -54,10 +60,9 @@ convert_input () {
 		fi
 	fi
 
-	CONVLOG="/tmp/$TITLE-convert.log"
 	if [ ! -z "$LOGFILE" ] ; then
-		echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv > \"$CONVLOG\"" >> "$LOGFILE"
-		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$CONVLOG" 2>> "$LOGFILE"
+		echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv > \"$PROGRESS\"" >> "$LOGFILE"
+		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$PROGRESS" 2>> "$LOGFILE"
 	else
 		[ ! -z "$DRY" ] && echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv"
 		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv
@@ -71,8 +76,19 @@ convert_input () {
 			chown "$OWNER" "$OUTFILE"
 		fi
 	fi
-	if [ -f "$CONVLOG" ] ; then
-		rm "$CONVLOG"
+	if [ -f "$PROGRESS" ] ; then
+		rm "$PROGRESS"
+	fi
+	if [ ! -z "$ARCHIVE" ] ; then
+		DIR=`dirname "$INFILE"`
+		if [ -f "$DIR/info" ] ; then
+			DATE=`cat "$DIR/info" |egrep "^E " |cut -d " " -f 3`
+			DATE=`date -u --date=@$DATE +%Y%m%d-%k%m`
+			echo "mv \"$INFILE\" \"$ARCHIVE/$TITLE-$DATE.mkv\"" >> "$LOGFILE"
+		else
+			echo "mv \"$INFILE\" \"$ARCHIVE\""
+		fi
+		chown -R "$OWNER" "$ARCHIVE"
 	fi
 }
 
@@ -81,9 +97,7 @@ process_file () {
 	if [ ! -f "$TMPFILE" -a ! -f "$OUTFILE" ] ; then
 		convert_input
 	else
-		if [ -z "$LOGFILE" ] ; then
-			echo "Skipping existing $OUTFILE"
-		fi
+		echo "Skipping existing $OUTFILE"
 	fi
 }
 
@@ -92,7 +106,7 @@ run_from_cmdline () {
 		process_file "$1" "$2"
 	else
 		for TYPE in avi mpg mpeg ; do
-			find "$1" -name "*.$TYPE" -print0 | while read -d $'\0' VID ; do
+			find "$1" -name "*.$TYPE" | while read VID ; do
 				process_file "$VID" "$2"
 			done
 		done
@@ -139,6 +153,7 @@ if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
 			echo -e "\t-i <input>"
 			echo -e "\t-o <output>"
 			echo -e "\t-u <owner>"
+			echo -e "\t-a <archive>"
 			echo -e "\t--dry-run"
 			echo
 			exit 1
