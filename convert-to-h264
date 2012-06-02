@@ -1,40 +1,5 @@
 #!/bin/bash
 
-LOGFILE="/var/log/handbrake-convert.log"
-PROGRESS="/tmp/handbrake-progress.log"
-RUNNING="/tmp/handbrake.running"
-DRY=""
-ARCHIVE=""
-
-while true ; do
-	case $1 in
-		--dry-run)
-			DRY="$1"
-		;;
-		-m)
-			shift
-			MODE="$1"
-		;;
-		-i)
-			shift
-			IN="$1"
-		;;
-		-o)
-			shift
-			OUT="$1"
-		;;
-		-u)
-			shift
-			OWNER="$1"
-		;;
-		-a)
-			shift
-			ARCHIVE="$1"
-		;;
-	esac
-	shift || break
-done
-
 prepare () {
 	if [ -d "$1" -a -f "$1/00001.ts" ] ; then
 		INFILE="$1/00001.ts"
@@ -79,17 +44,7 @@ convert_input () {
 	if [ -f "$PROGRESS" ] ; then
 		rm "$PROGRESS"
 	fi
-	if [ ! -z "$ARCHIVE" ] ; then
-		DIR=`dirname "$INFILE"`
-		if [ -f "$DIR/info" ] ; then
-			DATE=`cat "$DIR/info" |egrep "^E " |cut -d " " -f 3`
-			DATE=`date -u --date=@$DATE +%Y%m%d-%k%m`
-			echo "mv \"$INFILE\" \"$ARCHIVE/$TITLE-$DATE.mkv\"" >> "$LOGFILE"
-		else
-			echo "mv \"$INFILE\" \"$ARCHIVE\""
-		fi
-		chown -R "$OWNER" "$ARCHIVE"
-	fi
+	/usr/bin/logger "Converted $INFILE to $OUTFILE"
 }
 
 process_file () {
@@ -131,6 +86,44 @@ run_from_cron () {
 	done
 }
 
+LOGFILE="/var/log/handbrake-convert.log"
+PROGRESS="/tmp/handbrake-progress.log"
+RUNNING="/tmp/handbrake.running"
+DRY=""
+VDR=false
+
+while true ; do
+	case $1 in
+		--dry-run)
+			DRY="$1"
+		;;
+		-m)
+			shift
+			MODE="$1"
+		;;
+		-i)
+			shift
+			IN="$1"
+		;;
+		-o)
+			shift
+			OUT="$1"
+		;;
+		-u)
+			shift
+			OWNER="$1"
+		;;
+		-vdr)
+			VDR=true
+		;;
+	esac
+	shift || break
+done
+
+if [ $VDR ] ; then
+	IN="`echo $IN/*/*`"
+fi
+
 if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
 	case "$MODE" in
 		cmdline)
@@ -141,7 +134,7 @@ if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
 		;;
 		cron)
 			[ -z "$DRY" ] && touch $RUNNING
-			run_from_cron "`echo $IN/*/*`" "$OUT"
+			run_from_cron "$IN" "$OUT"
 			[ -z "$DRY" ] && rm $RUNNING
 		;;
 		*)
@@ -153,7 +146,7 @@ if [ ! -f $RUNNING -o ! -z "$DRY" ] ; then
 			echo -e "\t-i <input>"
 			echo -e "\t-o <output>"
 			echo -e "\t-u <owner>"
-			echo -e "\t-a <archive>"
+			echo -e "\t-vdr"
 			echo -e "\t--dry-run"
 			echo
 			exit 1
