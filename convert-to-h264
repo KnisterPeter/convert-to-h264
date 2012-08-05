@@ -3,7 +3,7 @@
 prepare () {
 	if [ -d "$1" -a -f "$1/00001.ts" ] ; then
 		INFILE="$1/00001.ts"
-		TITLE=`cat "$1/info" |grep "^T" |sed -e 's/^T \(.*\)/\1/'`
+		TITLE=`cat "$1/info" |grep "^T" |sed -e 's/^T \(.*\)/\1/' |sed -e 's/\//|/'`
 	else
 		INFILE="$1"
 		TITLE=`basename "$1" |sed -e 's/\(.*\)\.[^\.]\+/\1/'`
