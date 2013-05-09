@@ -5,8 +5,14 @@ prepare () {
 		INFILE="$1/00001.ts"
 		TITLE=`cat "$1/info" |grep "^T" |sed -e 's/^T \(.*\)/\1/' |sed -e 's/\//|/'`
 	else
-		INFILE="$1"
-		TITLE=`basename "$1" |sed -e 's/\(.*\)\.[^\.]\+/\1/'`
+    DIR=$(dirname "$1")
+    if [ -d "$DIR" -a -f "$DIR/00001.ts" ] ; then
+		  INFILE="$DIR/00001.ts"
+  		TITLE=`cat "$DIR/info" |grep "^T" |sed -e 's/^T \(.*\)/\1/' |sed -e 's/\//|/'`
+    else
+  		INFILE="$1"
+	  	TITLE=`basename "$1" |sed -e 's/\(.*\)\.[^\.]\+/\1/'`
+    fi
 	fi
 	TMPFILE="/tmp/$TITLE.mkv"
 	OUTFILE="$2/$TITLE.mkv"
@@ -120,7 +126,7 @@ while true ; do
 	shift || break
 done
 
-if [ $VDR ] ; then
+if [ $VDR = true ] ; then
 	IN="`echo $IN/*/*`"
 fi
 
