@@ -32,6 +32,7 @@ convert_input () {
 	fi
 
 	if [ ! -z "$LOGFILE" ] ; then
+    [ -x "$LOGGER" ] && $LOGGER "Starting HandBrake: -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv"
 		echo "/usr/bin/HandBrakeCLI -Z \"High Profile\" -i \"$INFILE\" --previews 30:0  -o \"$OUTFILE\" $AUDIO -f mkv > \"$PROGRESS\"" >> "$LOGFILE"
 		[ -z "$DRY" ] && nice -n 19 /usr/bin/HandBrakeCLI -Z "High Profile" -i "$INFILE" --previews 30:0  -o "$TMPFILE" $AUDIO -f mkv > "$PROGRESS" 2>> "$LOGFILE"
 	else
@@ -46,11 +47,13 @@ convert_input () {
 		if [ ! -z "$OWNER" ] ; then
 			chown "$OWNER" "$OUTFILE"
 		fi
+  elif [ -x "$LOGGER" ] ; then
+    $LOGGER "Do not move $INFILE ($TMPFILE) to $OUTFILE; Check video length"
 	fi
 	if [ -f "$PROGRESS" ] ; then
 		rm "$PROGRESS"
 	fi
-	/usr/bin/logger "Converted $INFILE to $OUTFILE"
+	[ -x "$LOGGER" ] && $LOGGER "Converted $INFILE to $OUTFILE"
 }
 
 process_file () {
@@ -97,6 +100,7 @@ PROGRESS="/tmp/handbrake-progress.log"
 RUNNING="/tmp/handbrake.running"
 DRY=""
 VDR=false
+LOGGER=/usr/bin/logger
 
 while true ; do
 	case $1 in
@@ -123,6 +127,7 @@ while true ; do
 			VDR=true
 		;;
 	esac
+  [ $# -eq 0 ] && break
 	shift || break
 done
 
